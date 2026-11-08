@@ -4,6 +4,12 @@ use tauri::menu::{CheckMenuItem, Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::App;
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
+
+/// Global hotkey that starts a capture. Logi Options+ maps the ERGO K860 Print
+/// Screen key to Ctrl+Opt+Cmd + HID key 0x15. Hotkeys match the physical key, so
+/// this is `KeyR` (QWERTY position) even though Colemak-DH types "P" there.
+const SHORTCUT: &str = "Control+Alt+Super+KeyR";
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -70,10 +76,23 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, _shortcut, event| {
+                    if event.state() == ShortcutState::Pressed {
+                        capture::start_capture(app);
+                    }
+                })
+                .build(),
+        )
         .setup(|app| {
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             capture::clean_temp_dir();
             setup_tray(app)?;
+            // Keep running without the hotkey if registration fails; the tray still works.
+            if let Err(e) = app.global_shortcut().register(SHORTCUT) {
+                eprintln!("failed to register shortcut {SHORTCUT}: {e}");
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![greet])

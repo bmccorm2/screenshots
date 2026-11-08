@@ -5,7 +5,7 @@
 
 cd (dirname (status filename))
 
-set prompt 'Read todo.md. Do ONLY the first unchecked task (- [ ]). Verify it works, then tick it in todo.md and append a short handoff note under "## Notes / risks" for the next agent. Do not commit. If the task needs input from the user (e.g. pressing a key), do not tick it; explain what is needed and stop. Then stop.'
+set prompt 'Read todo.md. Do ONLY the first unchecked task (- [ ]). Verify it works, then tick it in todo.md and append a short handoff note under "## Notes / risks" for the next agent. Do not commit. If the task needs input from the user (e.g. pressing a key), do not tick it; explain what is needed and stop. Then stop. Begin your final reply with "Task: <the task line from todo.md>" so the summary shows which task you did.'
 
 while grep -q -- '- \[ \]' todo.md
     set before (grep -c -- '- \[x\]' todo.md)

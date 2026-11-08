@@ -12,7 +12,7 @@ Build a macOS menu-bar app. When you press Print Screen, you select a region of 
   - Build: `bun run tauri build`
   - Frontend typecheck/build: `bun run build`
   - Rust: `cd src-tauri; cargo check; cargo clippy -- -D warnings`
-- The user's keyboard is a Logitech ERGO. Its Print Screen key is expected to send **F13** on macOS. This must be confirmed (task 6).
+- The user's keyboard is a Logitech ERGO. Its Print Screen key is mapped in Logi Options+ to send **Ctrl+Opt+Cmd+P** (as typed in Colemak-DH; physical QWERTY `R` key), because the K860 can't send F13 (task 6).
 
 ## Decisions
 - Stack: Tauri 2 + Rust backend. Frontend is **vanilla TypeScript + Vite** (no React or other framework). Package manager is **bun**.
@@ -20,7 +20,7 @@ Build a macOS menu-bar app. When you press Print Screen, you select a region of 
 - macOS only. Do not add Windows or Linux code paths.
 - **Menu-bar (tray) app only**: no Dock icon (`ActivationPolicy::Accessory`) and no window at launch. The tray menu has `Take Screenshot` (same flow as the hotkey, useful for testing), `Start at Login` (checkbox), and `Quit`.
 - **Start at login**: off by default. Toggle it with the tray `Start at Login` checkbox via `tauri-plugin-autostart` (`MacosLauncher::LaunchAgent`, no extra launch args). The checkbox state is read from `autolaunch().is_enabled()` at startup; the OS LaunchAgent is the source of truth, with no separate settings file.
-- **Global hotkey F13**, active even when another app is focused. Define it in one constant (`SHORTCUT` in `src-tauri/src/lib.rs`). There is no settings UI. React only to `ShortcutState::Pressed`, not to release.
+- **Global hotkey `Control+Alt+Super+KeyR`** (was F13; see task 6 notes), active even when another app is focused. Define it in one constant (`SHORTCUT` in `src-tauri/src/lib.rs`). There is no settings UI. React only to `ShortcutState::Pressed`, not to release.
 - **Capture** uses the macOS CLI: `/usr/sbin/screencapture -i -s -x <tmpfile>.png`
   - `-i -s` = interactive **region (mouse drag) selection only**. `-x` = no sound.
   - If the user presses Esc, the file is not created. Treat that as a cancel and do nothing else.
@@ -59,7 +59,7 @@ Tick each checkbox in this file as you complete it.
   - If the exit status is not success, or the file is missing or empty, clear `BUSY` and return.
   - Otherwise call `app.run_on_main_thread(...)` to show the context menu (task 7) for that path.
   - Clear `BUSY` after the menu closes. Make sure every path clears it, including errors.
-- [ ] 6. **Global shortcut**: register `tauri-plugin-global-shortcut` with `SHORTCUT = "F13"`. On `Pressed`, call `start_capture`. If registration fails, log to stderr and keep running so the tray still works. **Before moving on, have the user confirm the hotkey:** run `bun run tauri dev` with a temporary `eprintln!("shortcut fired")` and ask them to press Print Screen on the Logitech ERGO. If it doesn't fire:
+- [x] 6. **Global shortcut**: register `tauri-plugin-global-shortcut` with `SHORTCUT = "F13"`. On `Pressed`, call `start_capture`. If registration fails, log to stderr and keep running so the tray still works. **Before moving on, have the user confirm the hotkey:** run `bun run tauri dev` with a temporary `eprintln!("shortcut fired")` and ask them to press Print Screen on the Logitech ERGO. If it doesn't fire:
   - Check whether Logi Options+ maps that key to a macOS screenshot action. If so, ask the user to set it to the default keystroke or F13.
   - If the key sends something other than F13, ask the user what Logi Options+ or Karabiner-EventViewer shows, update `SHORTCUT`, and record the final key in this file's Decisions.
   - Remove the temporary log afterwards.
@@ -124,3 +124,4 @@ Tick each checkbox in this file as you complete it.
 - **Handoff (task 3)**: Tray + autostart are in `src-tauri/src/lib.rs` (`setup_tray`). `src-tauri/src/capture.rs` has **empty stubs** `start_capture` and `clean_temp_dir`; tasks 4/5 must replace them (the tray already calls both). The tray uses the full-color app icon, not a template (the icon isn't monochrome). The `login` handler relies on macOS auto-toggling the `CheckMenuItem` before the event fires. Verified: `cargo clippy -D warnings` passes, `bun run tauri dev` launches with no errors, and `lsappinfo` shows `type="UIElement"` (no Dock icon). Not verified: the tray icon visually and the menu clicks. This agent has no Accessibility or Screen Recording permission, and on this macOS, status items don't appear in `CGWindowList`. The user should check these manually.
 - **Handoff (task 4)**: `temp_dir`, `new_capture_path`, and `clean_temp_dir` are in `src-tauri/src/capture.rs`. `clean_temp_dir()` is called in `setup` (lib.rs) and on tray Quit. `new_capture_path` has a temporary `#[allow(dead_code)]`; remove it in task 5 when `start_capture` uses it. There is a unit test (`cargo test --lib`). Verified: the test and clippy pass, and a dummy file in `$TMPDIR/com.bryan.screenshots/` was deleted when `bun run tauri dev` started.
 - **Handoff (task 5)**: `start_capture` is in `capture.rs`. `BUSY` is reset by a `BusyGuard` (Drop), which moves into the main-thread closure, so it clears when `show_menu` returns or when spawn/`run_on_main_thread` fails. `show_menu` is a placeholder: task 7 replaces its body with `crate::menu::show_capture_menu(app, path)`, which must block until the menu closes. Verified with a temporary debug harness (removed): two quick calls spawn one `screencapture`. Interrupting it (exit 1) clears `BUSY`, and the next call runs again. Clippy and `cargo test --lib` pass. Not verified: an actual region selection, since the agent can't drag.
+- **Handoff (task 6)**: the global shortcut is in `lib.rs`: the plugin's `with_handler` calls `start_capture` on `Pressed`, and `setup` calls `register(SHORTCUT)` (logs to stderr on failure). `SHORTCUT = "Control+Alt+Super+KeyR"`. The K860 can't send F13, so the user set the Print Screen key in Logi Options+ to a keystroke: HID code 21 with Ctrl/Opt/Cmd. The layout is Colemak-DH, so that key types P, but `global-hotkey` matches physical QWERTY positions, hence `KeyR`. User confirmed the key fires and region selection starts. TEMP log removed; clippy passes. README (task 11) should explain this Logi setup. Leftover Karabiner parts were uninstalled.
