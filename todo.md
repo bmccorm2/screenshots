@@ -45,7 +45,7 @@ Build a macOS menu-bar app. When you press Print Screen, you select a region of 
 Tick each checkbox in this file as you complete it.
 
 - [x] 1. **Scaffold** in the existing dir: `bunx create-tauri-app@latest . --template vanilla-ts --manager bun --identifier com.bryan.screenshots --yes`. If the flags differ, scaffold an equivalent vanilla-ts + bun Tauri 2 project. Set the product name to `Screenshots`. Run `git init` and add a sensible `.gitignore` (`node_modules`, `dist`, `src-tauri/target`). Confirm `bun run tauri dev` launches.
-- [ ] 2. **Remove the default window**: delete the `windows` entry in `src-tauri/tauri.conf.json` so nothing opens at launch. In `setup`, call `app.set_activation_policy(tauri::ActivationPolicy::Accessory)`. Keep `index.html` as the editor page (or rename it to `editor.html` and update the Vite config accordingly).
+- [x] 2. **Remove the default window**: delete the `windows` entry in `src-tauri/tauri.conf.json` so nothing opens at launch. In `setup`, call `app.set_activation_policy(tauri::ActivationPolicy::Accessory)`. Keep `index.html` as the editor page (or rename it to `editor.html` and update the Vite config accordingly).
 - [ ] 3. **Tray**: in `src-tauri/src/lib.rs` `setup`, build a `TrayIconBuilder` using the app icon (template icon if possible). Its menu has:
   - `Take Screenshot` → `start_capture(app)`.
   - `Start at Login` (`CheckMenuItem`, initial checked = `app.autolaunch().is_enabled()`) → call `enable()` or `disable()` to match the new state. On error, log to stderr and reset the checkbox to the actual `is_enabled()` value.
