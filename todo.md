@@ -12,7 +12,7 @@ Build a macOS menu-bar app. When you press Print Screen, you select a region of 
   - Build: `bun run tauri build`
   - Frontend typecheck/build: `bun run build`
   - Rust: `cd src-tauri; cargo check; cargo clippy -- -D warnings`
-- The user's keyboard is a Logitech ERGO. Its Print Screen key is mapped in Logi Options+ to send **Ctrl+Opt+Cmd+P** (as typed in Colemak-DH; physical QWERTY `R` key), because the K860 can't send F13 (task 6).
+- The user's keyboard is a Logitech ERGO K860 (Colemak-DH). The Print Screen remap via Logi Options+ (Ctrl+Opt+Cmd+R) was dropped: Logi's agent posts an event (`iohidpostevent` in its log) but no registered hotkey (R/P/S/T/F/Q) ever fired. The hotkey is now **Cmd+Shift+4**; macOS's own Cmd+Shift+4 is disabled in System Settings.
 
 ## Decisions
 - Stack: Tauri 2 + Rust backend. Frontend is **vanilla TypeScript + Vite** (no React or other framework). Package manager is **bun**.
@@ -20,7 +20,7 @@ Build a macOS menu-bar app. When you press Print Screen, you select a region of 
 - macOS only. Do not add Windows or Linux code paths.
 - **Menu-bar (tray) app only**: no Dock icon (`ActivationPolicy::Accessory`) and no window at launch. The tray menu has `Take Screenshot` (same flow as the hotkey, useful for testing), `Start at Login` (checkbox), and `Quit`.
 - **Start at login**: off by default. Toggle it with the tray `Start at Login` checkbox via `tauri-plugin-autostart` (`MacosLauncher::LaunchAgent`, no extra launch args). The checkbox state is read from `autolaunch().is_enabled()` at startup; the OS LaunchAgent is the source of truth, with no separate settings file.
-- **Global hotkey `Control+Alt+Super+KeyR`** (was F13; see task 6 notes), active even when another app is focused. Define it in one constant (`SHORTCUT` in `src-tauri/src/lib.rs`). There is no settings UI. React only to `ShortcutState::Pressed`, not to release.
+- **Global hotkey `Super+Shift+Digit4`** (Cmd+Shift+4; was F13, then Ctrl+Opt+Cmd+R; see task 6 notes), active even when another app is focused. Define it in one constant (`SHORTCUT` in `src-tauri/src/lib.rs`). There is no settings UI. React only to `ShortcutState::Pressed`, not to release.
 - **Capture** uses the macOS CLI: `/usr/sbin/screencapture -i -s -x <tmpfile>.png`
   - `-i -s` = interactive **region (mouse drag) selection only**. `-x` = no sound.
   - If the user presses Esc, the file is not created. Treat that as a cancel and do nothing else.
@@ -63,23 +63,23 @@ Tick each checkbox in this file as you complete it.
   - Check whether Logi Options+ maps that key to a macOS screenshot action. If so, ask the user to set it to the default keystroke or F13.
   - If the key sends something other than F13, ask the user what Logi Options+ or Karabiner-EventViewer shows, update `SHORTCUT`, and record the final key in this file's Decisions.
   - Remove the temporary log afterwards.
-- [ ] 7. **Context menu** (`src-tauri/src/menu.rs`): implement `pub fn show_capture_menu(app: &AppHandle, path: PathBuf)`:
+- [x] 7. **Context menu** (`src-tauri/src/menu.rs`): implement `pub fn show_capture_menu(app: &AppHandle, path: PathBuf)`:
   - Build a `Menu` with two `MenuItem`s (ids `copy`, `edit`). Store `path` in managed state (`Mutex<Option<PathBuf>>`, "pending capture").
   - A popup menu needs a window. Use a reusable anchor window with label `menu-anchor`: 1×1 px, `decorations(false)`, `transparent(true)`, `always_on_top(true)`, `skip_taskbar(true)`, not resizable, created once and reused. Move it to `app.cursor_position()`, show it, `set_focus()` it, then call `window.popup_menu(&menu)`. Hide the anchor afterwards. If a hidden anchor works, prefer keeping it hidden.
   - Handle menu events (`app.on_menu_event` or the menu's handler):
     - `copy` → take the pending path, read the PNG, `tauri::image::Image::from_bytes`, `app.clipboard().write_image(&image)`, delete the file.
     - `edit` → take the pending path, then `open_editor(app, path)` (task 8).
   - If the menu closes without a choice (Esc or outside click), delete the pending file and clear the state. On macOS, `popup_menu` returns after the menu closes. Make sure the cancel cleanup doesn't race a selected item's event: only delete if the state is still `Some` after event handling, or defer the check with a short `run_on_main_thread` hop. Pick whichever approach works reliably and add a comment explaining it.
-- [ ] 8. **Open editor** (`src-tauri/src/editor.rs`): implement `open_editor(app, path)`:
+- [x] 8. **Open editor** (`src-tauri/src/editor.rs`): implement `open_editor(app, path)`:
   - Read the PNG bytes into a managed `Mutex<HashMap<String, Vec<u8>>>` keyed by the new window label `editor-<unix_millis>`, then delete the temp file.
   - Read the image dimensions (decode the PNG header via `tauri::image::Image::from_bytes`). Create a `WebviewWindow` on the editor page with title `Screenshot`. Size: image pixels ÷ the monitor scale factor, plus the toolbar height, clamped to 90% of the current monitor. Center it, `set_focus()`.
   - When the window is destroyed, remove its entry from the map.
-- [ ] 9. **Rust commands** (register in `invoke_handler`):
+- [x] 9. **Rust commands** (register in `invoke_handler`):
   - `get_capture(window: WebviewWindow) -> tauri::ipc::Response`: returns the raw PNG bytes for `window.label()`, or an error string if missing.
   - `copy_png(app, bytes: Vec<u8>) -> Result<(), String>`: puts the PNG on the clipboard as an image. Accept the body as raw bytes (`tauri::ipc::Request` with an `InvokeBody::Raw` body) to avoid JSON-encoding large arrays.
   - `save_png(path: String, bytes: Vec<u8>) -> Result<(), String>`: writes the file. Raw body as above; pass the path as a header or as a separate small arg, whichever is simplest and correct.
   - Add capability permissions for the plugins and commands to `src-tauri/capabilities/default.json`, scoped to windows `editor-*`.
-- [ ] 10. **Editor UI** (`index.html`, `src/main.ts`, `src/styles.css`):
+- [x] 10. **Editor UI** (`index.html`, `src/main.ts`, `src/styles.css`):
   - Top toolbar: 6 color swatches (the selected one is visibly highlighted), 3 width buttons (each shows a line of that thickness; the selected one is highlighted), Undo, Copy, Save…. Below it, the image area.
   - On load: `invoke('get_capture')` → `Blob` → `createImageBitmap`. Use a `<canvas>` whose **internal size equals the image's native pixel size**, displayed with CSS scaled to fit the area while keeping the aspect ratio (no upscaling past 1 CSS px per image px ÷ DPR).
   - State: `rects: {x, y, w, h, color, widthPx}[]` in image-pixel coordinates. Convert pointer events to image coordinates with `canvas.getBoundingClientRect()` and the canvas/CSS size ratio. Normalize negative width/height. Use pointer capture so dragging outside the canvas still works. Ignore rectangles smaller than 3×3 image px.
@@ -88,8 +88,8 @@ Tick each checkbox in this file as you complete it.
   - Copy: `canvas.toBlob('image/png')` → bytes → `copy_png`. Show a brief "Copied" toast (~1 s).
   - Save: `save()` from `@tauri-apps/plugin-dialog` with the default filename from Decisions and a `png` filter. If cancelled, do nothing. Otherwise call `save_png`, then show a brief "Saved" toast.
   - Show errors in the same toast area, in red.
-- [ ] 11. **Permissions note**: the first capture triggers the macOS Screen Recording permission prompt. In dev mode the permission belongs to the terminal app; in the built app it belongs to `Screenshots.app`. Add a short `README.md` covering run/build commands, this permission, and the Logitech key setup from task 6.
-- [ ] 12. **Lint and build**: `bun run build`, `cargo clippy -- -D warnings`, and `bun run tauri build` must all pass. Fix any warnings.
+- [x] 11. **Permissions note**: the first capture triggers the macOS Screen Recording permission prompt. In dev mode the permission belongs to the terminal app; in the built app it belongs to `Screenshots.app`. Add a short `README.md` covering run/build commands, this permission, and the Logitech key setup from task 6.
+- [x] 12. **Lint and build**: `bun run build`, `cargo clippy -- -D warnings`, and `bun run tauri build` must all pass. Fix any warnings.
 
 ## Acceptance criteria
 - `bun run build`, `cargo clippy -- -D warnings` (in `src-tauri`), and `bun run tauri build` succeed.
@@ -109,7 +109,7 @@ Tick each checkbox in this file as you complete it.
 
 ## Out of scope
 - Full-screen or window capture modes, delay timers, multi-monitor special handling (beyond what `screencapture -i` does natively).
-- Other annotation tools (arrows, text, blur, highlight, crop), moving or resizing rectangles, redo.
+- Other annotation tools (arrows, text, highlight, crop), moving or resizing rectangles, redo.
 - Settings UI, configurable hotkey, auto-update, code signing or notarization.
 - Windows or Linux support, tests beyond lint and build (there is no automated UI testing).
 
@@ -125,3 +125,6 @@ Tick each checkbox in this file as you complete it.
 - **Handoff (task 4)**: `temp_dir`, `new_capture_path`, and `clean_temp_dir` are in `src-tauri/src/capture.rs`. `clean_temp_dir()` is called in `setup` (lib.rs) and on tray Quit. `new_capture_path` has a temporary `#[allow(dead_code)]`; remove it in task 5 when `start_capture` uses it. There is a unit test (`cargo test --lib`). Verified: the test and clippy pass, and a dummy file in `$TMPDIR/com.bryan.screenshots/` was deleted when `bun run tauri dev` started.
 - **Handoff (task 5)**: `start_capture` is in `capture.rs`. `BUSY` is reset by a `BusyGuard` (Drop), which moves into the main-thread closure, so it clears when `show_menu` returns or when spawn/`run_on_main_thread` fails. `show_menu` is a placeholder: task 7 replaces its body with `crate::menu::show_capture_menu(app, path)`, which must block until the menu closes. Verified with a temporary debug harness (removed): two quick calls spawn one `screencapture`. Interrupting it (exit 1) clears `BUSY`, and the next call runs again. Clippy and `cargo test --lib` pass. Not verified: an actual region selection, since the agent can't drag.
 - **Handoff (task 6)**: the global shortcut is in `lib.rs`: the plugin's `with_handler` calls `start_capture` on `Pressed`, and `setup` calls `register(SHORTCUT)` (logs to stderr on failure). `SHORTCUT = "Control+Alt+Super+KeyR"`. The K860 can't send F13, so the user set the Print Screen key in Logi Options+ to a keystroke: HID code 21 with Ctrl/Opt/Cmd. The layout is Colemak-DH, so that key types P, but `global-hotkey` matches physical QWERTY positions, hence `KeyR`. User confirmed the key fires and region selection starts. TEMP log removed; clippy passes. README (task 11) should explain this Logi setup. Leftover Karabiner parts were uninstalled.
+- **Handoff (tasks 7–12)**: `menu.rs` (popup + `copy`/`edit` handling via `Builder::on_menu_event`), `editor.rs` (window creation, `get_capture`/`copy_png`/`save_png`), editor UI in `index.html`/`src/main.ts`/`src/styles.css`, README. Cancel cleanup uses a deferred `run_on_main_thread` hop: menu clicks and the hop go through the same FIFO event-loop queue, so the hop sees any click first. The anchor window is shown + focused (not hidden) so Esc reaches the menu. After the menu, if no editor is open, `app.hide()` returns focus to the previous app; `app.show()` unhides before the next popup/editor. `save_png` takes the path as a percent-encoded `path` header. App commands are declared in `build.rs` (`AppManifest`) so `capabilities/default.json` gates them to `editor-*`; `src-tauri/permissions/autogenerated/` is generated by that. Temp dir is also cleaned on `RunEvent::Exit` (covers Cmd+Q). Removed template leftovers: `greet`, `tauri-plugin-opener` (crate + npm), `src/assets`. Editor min size 520×200 so the toolbar fits. Verified: `bun run build`, `cargo clippy -D warnings`, `cargo test --lib`, `bun run tauri build`. Not verified (agent can't drag/click or record screen): the popup menu, Esc cancel, editor drawing, copy/save, autostart with the built app. The user should run the acceptance criteria manually.
+- **Added (post-handoff)**: editor tools Box / Number / Blur (`#tools` in toolbar). Number: click places a filled numbered circle (next number = count of numbers + 1, so undo rewinds it); size follows the width option. Blur: drag a region; drawn by downscaling the original image region 10pt/sample and smooth-upscaling (no `ctx.filter`, works on any WebKit). Undo covers all shapes. Editor min width raised to 740 so the toolbar fits.
+- **Fix (post-handoff)**: `run_on_main_thread` runs the closure *synchronously* when called on the main thread (tauri-runtime-wry `send_user_message`), so the old "deferred" cancel cleanup deleted the capture before Copy/Edit clicks were handled. Now the capture thread waits for the menu to close, then calls `menu::finish_capture_menu` from that non-main thread, which queues behind the menu event.

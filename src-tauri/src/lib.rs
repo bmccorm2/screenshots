@@ -1,4 +1,6 @@
 mod capture;
+mod editor;
+mod menu;
 
 use tauri::menu::{CheckMenuItem, Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
@@ -6,16 +8,10 @@ use tauri::App;
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
-/// Global hotkey that starts a capture. Logi Options+ maps the ERGO K860 Print
-/// Screen key to Ctrl+Opt+Cmd + HID key 0x15. Hotkeys match the physical key, so
-/// this is `KeyR` (QWERTY position) even though Colemak-DH types "P" there.
-const SHORTCUT: &str = "Control+Alt+Super+KeyR";
-
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
+/// Global hotkey that starts a capture. Replaces macOS's own Cmd+Shift+4, which
+/// must be disabled in System Settings → Keyboard → Keyboard Shortcuts →
+/// Screenshots. (The Logi Print Screen remap didn't reach the app reliably.)
+const SHORTCUT: &str = "Super+Shift+Digit4";
 
 fn setup_tray(app: &App) -> tauri::Result<()> {
     let autostart_on = app.autolaunch().is_enabled().unwrap_or_else(|e| {
@@ -74,7 +70,8 @@ fn setup_tray(app: &App) -> tauri::Result<()> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
@@ -85,6 +82,9 @@ pub fn run() {
                 })
                 .build(),
         )
+        .manage(menu::PendingCapture::default())
+        .manage(editor::Captures::default())
+        .on_menu_event(|app, event| menu::on_menu_event(app, &event))
         .setup(|app| {
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             capture::clean_temp_dir();
@@ -95,7 +95,16 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![greet])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .invoke_handler(tauri::generate_handler![
+            editor::get_capture,
+            editor::copy_png,
+            editor::save_png
+        ])
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app, event| {
+            if let tauri::RunEvent::Exit = event {
+                capture::clean_temp_dir();
+            }
+        });
 }

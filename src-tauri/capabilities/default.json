@@ -1,10 +1,13 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window",
-  "windows": ["main"],
+  "description": "Capability for editor windows",
+  "windows": ["editor-*"],
   "permissions": [
     "core:default",
-    "opener:default"
+    "dialog:allow-save",
+    "allow-get-capture",
+    "allow-copy-png",
+    "allow-save-png"
   ]
 }

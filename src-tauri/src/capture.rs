@@ -44,20 +44,28 @@ pub fn start_capture(app: &AppHandle) {
     let spawned = std::thread::Builder::new()
         .name("capture".into())
         .spawn(move || {
+            let _guard = guard; // BUSY cleared when this thread ends
             let path = new_capture_path();
             if !run_screencapture(&path) {
                 let _ = std::fs::remove_file(&path);
-                return; // guard drops -> BUSY cleared
+                return;
             }
+            let (tx, rx) = std::sync::mpsc::channel();
             let app2 = app.clone();
+            let path2 = path.clone();
             let result = app.run_on_main_thread(move || {
-                let _guard = guard; // cleared after the menu closes
-                show_menu(&app2, path);
+                crate::menu::show_capture_menu(&app2, path2);
+                let _ = tx.send(());
             });
             if let Err(e) = result {
-                // The closure (and guard) is dropped; BUSY is cleared.
                 eprintln!("run_on_main_thread failed: {e}");
+                let _ = std::fs::remove_file(&path);
+                return;
             }
+            // Wait for the menu to close, then queue the cancel cleanup from
+            // this (non-main) thread so it runs after any menu click.
+            let _ = rx.recv();
+            crate::menu::finish_capture_menu(&app, path);
         });
     if let Err(e) = spawned {
         // The closure (and guard) is dropped; BUSY is cleared.
@@ -81,14 +89,6 @@ fn run_screencapture(path: &Path) -> bool {
             false
         }
     }
-}
-
-/// Placeholder until task 7: replace the body with
-/// `crate::menu::show_capture_menu(app, path)`. It must block until the menu
-/// closes (macOS `popup_menu` does), because BUSY is cleared when it returns.
-fn show_menu(_app: &AppHandle, path: PathBuf) {
-    eprintln!("captured {} (context menu not implemented yet)", path.display());
-    let _ = std::fs::remove_file(path);
 }
 
 /// Deletes all files in the temp dir, ignoring errors.
