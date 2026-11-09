@@ -31,14 +31,13 @@ fn setup_tray(app: &App) -> tauri::Result<()> {
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&take, &login, &quit])?;
 
-    let mut tray = TrayIconBuilder::with_id("main")
+    let tray = TrayIconBuilder::with_id("main")
         .tooltip("Screenshots")
         .menu(&menu)
-        .show_menu_on_left_click(true);
-    if let Some(icon) = app.default_window_icon() {
-        // The app icon is full-color, so it is not used as a template image.
-        tray = tray.icon(icon.clone());
-    }
+        .show_menu_on_left_click(true)
+        // Black-on-transparent template: macOS tints it to match the menu bar.
+        .icon(tauri::include_image!("icons/tray.png"))
+        .icon_as_template(true);
 
     tray.on_menu_event(move |app, event| match event.id().as_ref() {
         "take" => capture::start_capture(app),
